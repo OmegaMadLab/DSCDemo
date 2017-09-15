@@ -17,7 +17,7 @@
             }
         }, 
         "adminUserName": {
-            "defaultValue": "sjadmin",
+            "defaultValue": "admin",
             "type": "string",
             "metadata": {      
                 "description": "Local and domain admin username"
@@ -49,9 +49,9 @@
         "vnetName": "[concat(parameters('envPrefix'),'-VNET')]",
         "dcPipName": "[concat(variables('dcName'),'-PIP')]",
         "dcNsgName": "[concat(variables('dcName'),'-NSG')]",
-        "adDCModulesURL": "https://raw.githubusercontent.com/OmegaMadLab/demoEnv/master/sidit17/scripts/CreateADDC.ps1.zip",
+        "adDCModulesURL": "https://raw.githubusercontent.com/OmegaMadLab/DSCDemo/master/DemoTemplate/scripts/CreateADDC.ps1.zip",
         "adDCConfigurationFunction": "CreateADDC.ps1\\CreateADDC",
-        "adJoinModulesURL": "https://raw.githubusercontent.com/OmegaMadLab/demoEnv/master/sidit17/scripts/ADDomainJoin.ps1.zip",
+        "adJoinModulesURL": "https://raw.githubusercontent.com/OmegaMadLab/DSCDemo/master/DemoTemplate/scripts/ADDomainJoin.ps1.zip",
         "adJoinConfigurationFunction": "ADDomainJoin.ps1\\ADDomainJoin",
         "feAvSetName": "[concat(variables('feName'),'-AvSet')]",
         "beAvSetName": "[concat(variables('beName'),'-AvSet')]",
