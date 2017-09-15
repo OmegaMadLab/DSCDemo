@@ -1,0 +1,79 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<RDCMan programVersion="2.7" schemaVersion="3">
+  <file>
+    <credentialsProfiles />
+    <properties>
+      <expanded>True</expanded>
+      <name>SIDIT17-dscDemoLab</name>
+    </properties>
+    <logonCredentials inherit="None">
+      <profileName scope="Local">Custom</profileName>
+      <userName>sjadmin</userName>
+      <password>AQAAANCMnd8BFdERjHoAwE/Cl+sBAAAA3kdyzg0Nd0yS7h1j9iI4kAAAAAACAAAAAAADZgAAwAAAABAAAACjoOSf5x58Ryrw3I6ranC+AAAAAASAAACgAAAAEAAAACaWh7PEyy4iyhcZXnn8lsYgAAAA13NL4lom9352+VlmecMnMq2vg6FwAAwVonT0Gb1IAYkUAAAARM1dza+B/mRU2ALDqoBJFpH+I5A=</password>
+      <domain>sidit17</domain>
+    </logonCredentials>
+    <remoteDesktop inherit="None">
+      <sameSizeAsClientArea>True</sameSizeAsClientArea>
+      <fullScreen>False</fullScreen>
+      <colorDepth>24</colorDepth>
+    </remoteDesktop>
+    <localResources inherit="None">
+      <audioRedirection>Client</audioRedirection>
+      <audioRedirectionQuality>Dynamic</audioRedirectionQuality>
+      <audioCaptureRedirection>DoNotRecord</audioCaptureRedirection>
+      <keyboardHook>Remote</keyboardHook>
+      <redirectClipboard>True</redirectClipboard>
+      <redirectDrives>False</redirectDrives>
+      <redirectDrivesList />
+      <redirectPrinters>False</redirectPrinters>
+      <redirectPorts>False</redirectPorts>
+      <redirectSmartCards>True</redirectSmartCards>
+      <redirectPnpDevices>False</redirectPnpDevices>
+    </localResources>
+    <server>
+      <properties>
+        <displayName>BE01</displayName>
+        <name>172.17.3.9</name>
+      </properties>
+    </server>
+    <server>
+      <properties>
+        <displayName>BE02</displayName>
+        <name>172.17.3.10</name>
+      </properties>
+    </server>
+    <server>
+      <properties>
+        <displayName>DEVENV</displayName>
+        <name>172.17.3.8</name>
+      </properties>
+    </server>
+    <server>
+      <properties>
+        <displayName>DSC</displayName>
+        <name>172.17.3.5</name>
+      </properties>
+    </server>
+    <server>
+      <properties>
+        <displayName>FE01</displayName>
+        <name>172.17.3.6</name>
+      </properties>
+    </server>
+    <server>
+      <properties>
+        <displayName>FE02</displayName>
+        <name>172.17.3.7</name>
+      </properties>
+    </server>
+    <server>
+      <properties>
+        <displayName>NDJSRV</displayName>
+        <name>172.17.3.15</name>
+      </properties>
+    </server>
+  </file>
+  <connected />
+  <favorites />
+  <recentlyUsed />
+</RDCMan>

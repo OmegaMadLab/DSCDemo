@@ -1,0 +1,1196 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "envPrefix": {
+            "defaultValue": "sidit17",
+            "type": "string",
+            "metadata": {      
+                "description": "Prefix for items naming convention"
+            }
+        },
+        "genericVmSize": {
+            "defaultValue": "standard_F2",
+            "type": "string",
+            "metadata": {      
+                "description": "VM size used for DC, DSC server, Frontend servers"
+            }
+        }, 
+        "adminUserName": {
+            "defaultValue": "sjadmin",
+            "type": "string",
+            "metadata": {      
+                "description": "Local and domain admin username"
+            }
+        },
+        "adminPassword": {
+            "type": "securestring",
+            "metadata": {      
+                "description": "Local and domain admin password"
+            }
+        },
+        "domainName": {
+            "type": "string",
+            "defaultValue": "sidit17.local",
+            "metadata": {
+                "description": "AD domain name"
+            }
+        }
+    },
+    "variables": {
+        "diagStorageName": "[take(concat(parameters('envPrefix'),'diagsa',uniqueString(resourceGroup().id)),24)]",
+        "diagStorageUri": "[concat('https', '://',variables('diagStorageName'),'.blob.core.windows.net', '/')]",
+        "dcName": "[concat(parameters('envPrefix'),'-DC')]",
+        "dscName": "[concat(parameters('envPrefix'),'-DSC')]",
+        "ndjName": "[concat(parameters('envPrefix'),'-NDJ')]",
+        "devEnvName": "[concat(parameters('envPrefix'),'-DEVENV')]",
+        "feName": "[concat(parameters('envPrefix'),'-FE0')]",
+        "beName": "[concat(parameters('envPrefix'),'-BE0')]",
+        "vnetName": "[concat(parameters('envPrefix'),'-VNET')]",
+        "dcPipName": "[concat(variables('dcName'),'-PIP')]",
+        "dcNsgName": "[concat(variables('dcName'),'-NSG')]",
+        "adDCModulesURL": "https://raw.githubusercontent.com/OmegaMadLab/demoEnv/master/sidit17/scripts/CreateADDC.ps1.zip",
+        "adDCConfigurationFunction": "CreateADDC.ps1\\CreateADDC",
+        "adJoinModulesURL": "https://raw.githubusercontent.com/OmegaMadLab/demoEnv/master/sidit17/scripts/ADDomainJoin.ps1.zip",
+        "adJoinConfigurationFunction": "ADDomainJoin.ps1\\ADDomainJoin",
+        "feAvSetName": "[concat(variables('feName'),'-AvSet')]",
+        "beAvSetName": "[concat(variables('beName'),'-AvSet')]",
+        "feIlbName": "[concat(variables('feName'),'-ILB')]",
+        "beIlbName": "[concat(variables('beName'),'-ILB')]",
+        "feIlbId": "[resourceId('Microsoft.Network/loadBalancers',variables('feIlbName'))]",
+        "beIlbId": "[resourceId('Microsoft.Network/loadBalancers',variables('beIlbName'))]",
+        "feFeConfigName" : "[concat(variables('feIlbName'),'-FEConfig')]",
+        "beFeConfigName" : "[concat(variables('beIlbName'),'-FEConfig')]",
+        "feBeConfigName" : "[concat(variables('feIlbName'),'-BEConfig')]",
+        "beBeConfigName" : "[concat(variables('beIlbName'),'-BEConfig')]",
+        "feProbeName80" : "[concat(variables('feIlbName'),'-Probe80')]",
+        "beProbeName80" : "[concat(variables('beIlbName'),'-Probe80')]",
+        "feProbeName443" : "[concat(variables('feIlbName'),'-Probe443')]",
+        "beProbeName443" : "[concat(variables('beIlbName'),'-Probe443')]",
+        "feFeConfigId": "[concat(variables('feIlbId'),'/frontendIPConfigurations/',variables('feFeConfigName'))]",
+        "feBeConfigId": "[concat(variables('feIlbId'),'/backendAddressPools/',variables('feBeConfigName'))]",
+        "feProbeId80": "[concat(variables('feIlbId'),'/probes/',variables('feProbeName80'))]",
+        "feProbeId443": "[concat(variables('feIlbId'),'/probes/',variables('feProbeName443'))]",
+        "beFeConfigId": "[concat(variables('beIlbId'),'/frontendIPConfigurations/',variables('beFeConfigName'))]",
+        "beBeConfigId": "[concat(variables('beIlbId'),'/backendAddressPools/',variables('beBeConfigName'))]",
+        "beProbeId80": "[concat(variables('beIlbId'),'/probes/',variables('beProbeName80'))]",
+        "beProbeId443": "[concat(variables('beIlbId'),'/probes/',variables('beProbeName443'))]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Compute/virtualMachines",
+            "name": "[variables('dcName')]",
+            "apiVersion": "2016-04-30-preview",
+            "location": "[resourceGroup().location]",
+            "properties": {
+        
+                "hardwareProfile": {
+                    "vmSize": "[parameters('genericVmSize')]"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "MicrosoftWindowsServer",
+                        "offer": "WindowsServer",
+                        "sku": "2016-Datacenter",
+                        "version": "latest"
+                    },
+                    "osDisk": {
+                        "osType": "Windows",
+                        "name": "[concat(variables('dcName'),'-OsDisk')]",
+                        "createOption": "FromImage",
+                        "caching": "ReadWrite",
+                        "managedDisk": {
+                            "storageAccountType": "Standard_LRS"
+                        },
+                        "diskSizeGB": 128
+                    },
+                    "dataDisks": []
+                },
+                "osProfile": {
+                    "computerName": "[variables('dcName')]",
+                    "adminUsername": "[parameters('adminUserName')]",
+                    "adminPassword": "[parameters('adminPassword')]",
+                    "windowsConfiguration": {
+                        "provisionVMAgent": true,
+                        "enableAutomaticUpdates": true
+                    },
+                    "secrets": []
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', concat(variables('dcName'),'-NIC'))]"
+                        }
+                    ]
+                },
+                "diagnosticsProfile": {
+                    "bootDiagnostics": {
+                        "enabled": true,
+                        "storageUri": "[variables('diagStorageUri')]"
+                    }
+                }
+            },
+            "resources": [
+                {
+                    "type": "Microsoft.Compute/virtualMachines/extensions",
+                    "name": "[concat(variables('dcName'),'/InstallDomainController')]",
+                    "apiVersion": "2016-04-30-preview",
+                    "location": "[resourceGroup().location]",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Compute/virtualMachines', variables('dcName'))]"
+                    ],
+                    "properties": {
+                
+                        "publisher": "Microsoft.Powershell",
+                        "type": "DSC",
+                        "typeHandlerVersion": "2.19",
+                        "autoUpgradeMinorVersion": false,
+                        "settings": {
+                            "modulesURL": "[variables('adDCModulesURL')]",
+                            "configurationFunction": "[variables('adDCConfigurationFunction')]",
+                            "properties": {
+                                "domainName": "[parameters('domainName')]",
+                                "adminCreds": {
+                                    "userName": "[parameters('adminUserName')]",
+                                    "password": "PrivateSettingsRef:adminPassword"
+                                }
+                            }
+                        },
+                        "protectedSettings": {
+                            "items": {
+                                "adminPassword": "[parameters('adminPassword')]"
+                            }
+                        }
+                    }
+                }
+            ],
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', concat(variables('dcName'),'-NIC'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('diagStorageName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachines",
+            "name": "[variables('dscName')]",
+            "apiVersion": "2016-04-30-preview",
+            "location": "[resourceGroup().location]",
+            "properties": {
+        
+                "hardwareProfile": {
+                    "vmSize": "[parameters('genericVmSize')]"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "MicrosoftWindowsServer",
+                        "offer": "WindowsServer",
+                        "sku": "2016-Datacenter",
+                        "version": "latest"
+                    },
+                    "osDisk": {
+                        "osType": "Windows",
+                        "name": "[concat(variables('dscName'),'-OsDisk')]",
+                        "createOption": "FromImage",
+                        "caching": "ReadWrite",
+                        "managedDisk": {
+                            "storageAccountType": "Standard_LRS"
+                        },
+                        "diskSizeGB": 128
+                    },
+                    "dataDisks": []
+                },
+                "osProfile": {
+                    "computerName": "[variables('dscName')]",
+                    "adminUsername": "[parameters('adminUserName')]",
+                    "adminPassword": "[parameters('adminPassword')]",
+                    "windowsConfiguration": {
+                        "provisionVMAgent": true,
+                        "enableAutomaticUpdates": true
+                    },
+                    "secrets": []
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', concat(variables('dscName'),'-NIC'))]"
+                        }
+                    ]
+                },
+                "diagnosticsProfile": {
+                    "bootDiagnostics": {
+                        "enabled": true,
+                        "storageUri": "[variables('diagStorageUri')]"
+                    }
+                }
+            },
+            "resources": [
+                {
+                    "type": "Microsoft.Compute/virtualMachines/extensions",
+                    "name": "[concat(variables('dscName'),'/DomainJoin')]",
+                    "apiVersion": "2016-04-30-preview",
+                    "location": "[resourceGroup().location]",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Compute/virtualMachines', variables('dscName'))]"
+                    ],
+                    "properties": {
+                
+                        "publisher": "Microsoft.Powershell",
+                        "type": "DSC",
+                        "typeHandlerVersion": "2.19",
+                        "autoUpgradeMinorVersion": false,
+                        "settings": {
+                            "modulesURL": "[variables('adJoinModulesURL')]",
+                            "configurationFunction": "[variables('adJoinConfigurationFunction')]",
+                            "properties": {
+                                "domainName": "[parameters('domainName')]",
+                                "adminCreds": {
+                                    "userName": "[parameters('adminUserName')]",
+                                    "password": "PrivateSettingsRef:adminPassword"
+                                }
+                            }
+                        },
+                        "protectedSettings": {
+                            "items": {
+                                "adminPassword": "[parameters('adminPassword')]"
+                            }
+                        }
+                    }
+                }
+            ],
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', concat(variables('dscName'),'-NIC'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('diagStorageName'))]",
+                "[resourceId('Microsoft.Resources/deployments', 'updateVNet')]"
+            ]
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachines",
+            "name": "[variables('ndjName')]",
+            "apiVersion": "2016-04-30-preview",
+            "location": "[resourceGroup().location]",
+            "properties": {
+        
+                "hardwareProfile": {
+                    "vmSize": "[parameters('genericVmSize')]"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "MicrosoftWindowsServer",
+                        "offer": "WindowsServer",
+                        "sku": "2016-Datacenter",
+                        "version": "latest"
+                    },
+                    "osDisk": {
+                        "osType": "Windows",
+                        "name": "[concat(variables('ndjName'),'-OsDisk')]",
+                        "createOption": "FromImage",
+                        "caching": "ReadWrite",
+                        "managedDisk": {
+                            "storageAccountType": "Standard_LRS"
+                        },
+                        "diskSizeGB": 128
+                    },
+                    "dataDisks": []
+                },
+                "osProfile": {
+                    "computerName": "[variables('ndjName')]",
+                    "adminUsername": "[parameters('adminUserName')]",
+                    "adminPassword": "[parameters('adminPassword')]",
+                    "windowsConfiguration": {
+                        "provisionVMAgent": true,
+                        "enableAutomaticUpdates": true
+                    },
+                    "secrets": []
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', concat(variables('ndjName'),'-NIC'))]"
+                        }
+                    ]
+                },
+                "diagnosticsProfile": {
+                    "bootDiagnostics": {
+                        "enabled": true,
+                        "storageUri": "[variables('diagStorageUri')]"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', concat(variables('ndjName'),'-NIC'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('diagStorageName'))]",
+                "[resourceId('Microsoft.Resources/deployments', 'updateVNet')]"
+            ]
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachines",
+            "name": "[concat(variables('feName'),copyIndex(1))]",
+            "apiVersion": "2016-04-30-preview",
+            "location": "[resourceGroup().location]",
+            "copy": {
+                "name": "feVMCopy",
+                "count": 2
+            },
+            "properties": {
+        
+                "hardwareProfile": {
+                    "vmSize": "[parameters('genericVmSize')]"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "MicrosoftWindowsServer",
+                        "offer": "WindowsServer",
+                        "sku": "2016-Datacenter",
+                        "version": "latest"
+                    },
+                    "osDisk": {
+                        "osType": "Windows",
+                        "name": "[concat(variables('feName'),copyIndex(1),'-OsDisk')]",
+                        "createOption": "FromImage",
+                        "caching": "ReadWrite",
+                        "managedDisk": {
+                            "storageAccountType": "Standard_LRS"
+                        },
+                        "diskSizeGB": 128
+                    },
+                    "dataDisks": []
+                },
+                "osProfile": {
+                    "computerName": "[concat(variables('feName'),copyIndex(1))]",
+                    "adminUsername": "[parameters('adminUserName')]",
+                    "adminPassword": "[parameters('adminPassword')]",
+                    "windowsConfiguration": {
+                        "provisionVMAgent": true,
+                        "enableAutomaticUpdates": true
+                    },
+                    "secrets": []
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', concat(variables('feName'),copyIndex(1),'-NIC'))]"
+                        }
+                    ]
+                },
+                "diagnosticsProfile": {
+                    "bootDiagnostics": {
+                        "enabled": true,
+                        "storageUri": "[variables('diagStorageUri')]"
+                    }
+                },
+                "availabilitySet": {
+                    "id": "[resourceId('Microsoft.Compute/availabilitySets', variables('feAvSetName'))]"
+                }
+            },
+            "resources": [
+                {
+                    "type": "Microsoft.Compute/virtualMachines/extensions",
+                    "name": "[concat(variables('feName'),copyIndex(1),'/DomainJoin')]",
+                    "apiVersion": "2016-04-30-preview",
+                    "location": "[resourceGroup().location]",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Compute/virtualMachines', concat(variables('feName'),copyIndex(1)))]"
+                    ],
+                    "properties": {
+                
+                        "publisher": "Microsoft.Powershell",
+                        "type": "DSC",
+                        "typeHandlerVersion": "2.19",
+                        "autoUpgradeMinorVersion": false,
+                        "settings": {
+                            "modulesURL": "[variables('adJoinModulesURL')]",
+                            "configurationFunction": "[variables('adJoinConfigurationFunction')]",
+                            "properties": {
+                                "domainName": "[parameters('domainName')]",
+                                "adminCreds": {
+                                    "userName": "[parameters('adminUserName')]",
+                                    "password": "PrivateSettingsRef:adminPassword"
+                                }
+                            }
+                        },
+                        "protectedSettings": {
+                            "items": {
+                                "adminPassword": "[parameters('adminPassword')]"
+                            }
+                        }
+                    }
+                }
+            ],
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', concat(variables('feName'),'1-NIC'))]",
+                "[resourceId('Microsoft.Network/networkInterfaces', concat(variables('feName'),'2-NIC'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('diagStorageName'))]",
+                "[resourceId('Microsoft.Compute/availabilitySets', variables('feAvSetName'))]",
+                "[resourceId('Microsoft.Resources/deployments', 'updateVNet')]"
+            ]
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachines",
+            "name": "[variables('devEnvName')]",
+            "apiVersion": "2016-04-30-preview",
+            "location": "[resourceGroup().location]",
+            "properties": {
+        
+                "hardwareProfile": {
+                    "vmSize": "[parameters('genericVmSize')]"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "MicrosoftWindowsServer",
+                        "offer": "WindowsServer",
+                        "sku": "2016-Datacenter",
+                        "version": "latest"
+                    },
+                    "osDisk": {
+                        "osType": "Windows",
+                        "name": "[concat(variables('devEnvName'),'-OsDisk')]",
+                        "createOption": "FromImage",
+                        "caching": "ReadWrite",
+                        "managedDisk": {
+                            "storageAccountType": "Standard_LRS"
+                        },
+                        "diskSizeGB": 128
+                    },
+                    "dataDisks": []
+                },
+                "osProfile": {
+                    "computerName": "[variables('devEnvName')]",
+                    "adminUsername": "[parameters('adminUserName')]",
+                    "adminPassword": "[parameters('adminPassword')]",
+                    "windowsConfiguration": {
+                        "provisionVMAgent": true,
+                        "enableAutomaticUpdates": true
+                    },
+                    "secrets": []
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', concat(variables('devEnvName'),'-NIC'))]"
+                        }
+                    ]
+                },
+                "diagnosticsProfile": {
+                    "bootDiagnostics": {
+                        "enabled": true,
+                        "storageUri": "[variables('diagStorageUri')]"
+                    }
+                }
+            },
+            "resources": [
+                {
+                    "type": "Microsoft.Compute/virtualMachines/extensions",
+                    "name": "[concat(variables('devEnvName'),'/DomainJoin')]",
+                    "apiVersion": "2016-04-30-preview",
+                    "location": "[resourceGroup().location]",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Compute/virtualMachines', variables('devEnvName'))]"
+                    ],
+                    "properties": {
+                
+                        "publisher": "Microsoft.Powershell",
+                        "type": "DSC",
+                        "typeHandlerVersion": "2.19",
+                        "autoUpgradeMinorVersion": false,
+                        "settings": {
+                            "modulesURL": "[variables('adJoinModulesURL')]",
+                            "configurationFunction": "[variables('adJoinConfigurationFunction')]",
+                            "properties": {
+                                "domainName": "[parameters('domainName')]",
+                                "adminCreds": {
+                                    "userName": "[parameters('adminUserName')]",
+                                    "password": "PrivateSettingsRef:adminPassword"
+                                }
+                            }
+                        },
+                        "protectedSettings": {
+                            "items": {
+                                "adminPassword": "[parameters('adminPassword')]"
+                            }
+                        }
+                    }
+                }
+            ],
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', concat(variables('devEnvName'),'-NIC'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('diagStorageName'))]",
+                "[resourceId('Microsoft.Resources/deployments', 'updateVNet')]"
+            ]
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachines",
+            "name": "[concat(variables('beName'),copyIndex(1))]",
+            "apiVersion": "2016-04-30-preview",
+            "location": "[resourceGroup().location]",
+            "copy": {
+                "name": "beVMCopy",
+                "count": 2
+            },
+            "properties": {
+        
+                "hardwareProfile": {
+                    "vmSize": "[parameters('genericVmSize')]"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "MicrosoftWindowsServer",
+                        "offer": "WindowsServer",
+                        "sku": "2016-Datacenter",
+                        "version": "latest"
+                    },
+                    "osDisk": {
+                        "osType": "Windows",
+                        "name": "[concat(variables('beName'),copyIndex(1),'-OsDisk')]",
+                        "createOption": "FromImage",
+                        "caching": "ReadWrite",
+                        "managedDisk": {
+                            "storageAccountType": "Standard_LRS"
+                        },
+                        "diskSizeGB": 128
+                    },
+                    "dataDisks": []
+                },
+                "osProfile": {
+                    "computerName": "[concat(variables('beName'),copyIndex(1))]",
+                    "adminUsername": "[parameters('adminUserName')]",
+                    "adminPassword": "[parameters('adminPassword')]",
+                    "windowsConfiguration": {
+                        "provisionVMAgent": true,
+                        "enableAutomaticUpdates": true
+                    },
+                    "secrets": []
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', concat(variables('beName'),copyIndex(1),'-NIC'))]"
+                        }
+                    ]
+                },
+                "diagnosticsProfile": {
+                    "bootDiagnostics": {
+                        "enabled": true,
+                        "storageUri": "[variables('diagStorageUri')]"
+                    }
+                },
+                "availabilitySet": {
+                    "id": "[resourceId('Microsoft.Compute/availabilitySets', variables('beAvSetName'))]"
+                }
+            },
+            "resources": [
+                {
+                    "type": "Microsoft.Compute/virtualMachines/extensions",
+                    "name": "[concat(variables('beName'),copyIndex(1),'/DomainJoin')]",
+                    "apiVersion": "2016-04-30-preview",
+                    "location": "[resourceGroup().location]",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Compute/virtualMachines', concat(variables('beName'),copyIndex(1)))]"
+                    ],
+                    "properties": {
+                
+                        "publisher": "Microsoft.Powershell",
+                        "type": "DSC",
+                        "typeHandlerVersion": "2.19",
+                        "autoUpgradeMinorVersion": false,
+                        "settings": {
+                            "modulesURL": "[variables('adJoinModulesURL')]",
+                            "configurationFunction": "[variables('adJoinConfigurationFunction')]",
+                            "properties": {
+                                "domainName": "[parameters('domainName')]",
+                                "adminCreds": {
+                                    "userName": "[parameters('adminUserName')]",
+                                    "password": "PrivateSettingsRef:adminPassword"
+                                }
+                            }
+                        },
+                        "protectedSettings": {
+                            "items": {
+                                "adminPassword": "[parameters('adminPassword')]"
+                            }
+                        }
+                    }
+                }
+            ],
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', concat(variables('beName'),'1-NIC'))]",
+                "[resourceId('Microsoft.Network/networkInterfaces', concat(variables('beName'),'2-NIC'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('diagStorageName'))]",
+                "[resourceId('Microsoft.Compute/availabilitySets', variables('beAvSetName'))]",
+                "[resourceId('Microsoft.Resources/deployments', 'updateVNet')]"
+            ]
+        },
+        {
+            "type": "Microsoft.Network/networkInterfaces",
+            "name": "[concat(variables('dcName'),'-NIC')]",
+            "apiVersion": "2017-03-01",
+            "location": "[resourceGroup().location]",
+            "properties": {
+        
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "privateIPAddress": "172.17.3.4",
+                            "privateIPAllocationMethod": "Static",
+                            "publicIPAddress": {
+                                "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('dcPipName'))]"
+                            },
+                            "subnet": {
+                                "id": "[concat(resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), '/subnets/default')]"
+                            }
+                        }
+                    }
+                ],
+                "dnsSettings": {
+                    "dnsServers": []
+                },
+                "enableIPForwarding": false,
+                "networkSecurityGroup": {
+                    "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('dcNsgName'))]"
+                }
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/publicIPAddresses', variables('dcPipName'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]",
+                "[resourceId('Microsoft.Network/networkSecurityGroups', variables('dcNsgName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Network/networkInterfaces",
+            "name": "[concat(variables('dscName'),'-NIC')]",
+            "apiVersion": "2017-03-01",
+            "location": "[resourceGroup().location]",
+            "properties": {
+        
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "privateIPAddress": "172.17.3.5",
+                            "privateIPAllocationMethod": "Static",
+                            "subnet": {
+                                "id": "[concat(resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), '/subnets/default')]"
+                            }
+                        }
+                    }
+                ],
+                "dnsSettings": {
+                    "dnsServers": []
+                },
+                "enableIPForwarding": false
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Network/networkInterfaces",
+            "name": "[concat(variables('ndjName'),'-NIC')]",
+            "apiVersion": "2017-03-01",
+            "location": "[resourceGroup().location]",
+            "properties": {
+        
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "privateIPAddress": "172.17.3.15",
+                            "privateIPAllocationMethod": "Static",
+                            "subnet": {
+                                "id": "[concat(resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), '/subnets/default')]"
+                            }
+                        }
+                    }
+                ],
+                "dnsSettings": {
+                    "dnsServers": []
+                },
+                "enableIPForwarding": false
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Network/networkInterfaces",
+            "name": "[concat(variables('feName'),'1-NIC')]",
+            "apiVersion": "2017-03-01",
+            "location": "[resourceGroup().location]",
+            "properties": {
+        
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "privateIPAddress": "172.17.3.6",
+                            "privateIPAllocationMethod": "Static",
+                            "subnet": {
+                                "id": "[concat(resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), '/subnets/default')]"
+                            },
+                            "loadBalancerBackendAddressPools": [
+                                {
+                                "id": "[variables('feBeConfigId')]"
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "dnsSettings": {
+                    "dnsServers": []
+                },
+                "enableIPForwarding": false
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]",
+                "[resourceId('Microsoft.Network/loadBalancers', variables('feIlbName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Network/networkInterfaces",
+            "name": "[concat(variables('feName'),'2-NIC')]",
+            "apiVersion": "2017-03-01",
+            "location": "[resourceGroup().location]",
+            "properties": {
+        
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "privateIPAddress": "172.17.3.7",
+                            "privateIPAllocationMethod": "Static",
+                            "subnet": {
+                                "id": "[concat(resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), '/subnets/default')]"
+                            },
+                            "loadBalancerBackendAddressPools": [
+                                {
+                                "id": "[variables('feBeConfigId')]"
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "dnsSettings": {
+                    "dnsServers": []
+                },
+                "enableIPForwarding": false
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]",
+                "[resourceId('Microsoft.Network/loadBalancers', variables('feIlbName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Network/networkInterfaces",
+            "name": "[concat(variables('devEnvName'),'-NIC')]",
+            "apiVersion": "2017-03-01",
+            "location": "[resourceGroup().location]",
+            "properties": {
+        
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "privateIPAddress": "172.17.3.8",
+                            "privateIPAllocationMethod": "Static",
+                            "subnet": {
+                                "id": "[concat(resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), '/subnets/default')]"
+                            }
+                        }
+                    }
+                ],
+                "dnsSettings": {
+                    "dnsServers": []
+                },
+                "enableIPForwarding": false
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Network/networkInterfaces",
+            "name": "[concat(variables('beName'),'1-NIC')]",
+            "apiVersion": "2017-03-01",
+            "location": "[resourceGroup().location]",
+            "properties": {
+        
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "privateIPAddress": "172.17.3.9",
+                            "privateIPAllocationMethod": "Static",
+                            "subnet": {
+                                "id": "[concat(resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), '/subnets/default')]"
+                            },
+                            "loadBalancerBackendAddressPools": [
+                                {
+                                    "id": "[variables('beBeConfigId')]"
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "dnsSettings": {
+                    "dnsServers": []
+                },
+                "enableIPForwarding": false
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]",
+                "[resourceId('Microsoft.Network/loadBalancers', variables('beIlbName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Network/networkInterfaces",
+            "name": "[concat(variables('beName'),'2-NIC')]",
+            "apiVersion": "2017-03-01",
+            "location": "[resourceGroup().location]",
+            "properties": {
+        
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "privateIPAddress": "172.17.3.10",
+                            "privateIPAllocationMethod": "Static",
+                            "subnet": {
+                                "id": "[concat(resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), '/subnets/default')]"
+                            },
+                            "loadBalancerBackendAddressPools": [
+                                {
+                                    "id": "[variables('beBeConfigId')]"
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "dnsSettings": {
+                    "dnsServers": []
+                },
+                "enableIPForwarding": false
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]",
+                "[resourceId('Microsoft.Network/loadBalancers', variables('beIlbName'))]"  
+            ]
+        },
+        {
+            "type": "Microsoft.Network/networkSecurityGroups",
+            "name": "[variables('dcNsgName')]",
+            "apiVersion": "2017-03-01",
+            "location": "[resourceGroup().location]",
+            "properties": {
+        
+                "securityRules": [
+                    {
+                        "name": "default-allow-rdp",
+                        "properties": {
+                            "protocol": "Tcp",
+                            "sourcePortRange": "*",
+                            "destinationPortRange": "3389",
+                            "sourceAddressPrefix": "*",
+                            "destinationAddressPrefix": "*",
+                            "access": "Allow",
+                            "priority": 1000,
+                            "direction": "Inbound"
+                        }
+                    }
+                ]
+            },
+            "dependsOn": []
+        },
+        {
+            "type": "Microsoft.Network/publicIPAddresses",
+            "name": "[variables('dcPipName')]",
+            "apiVersion": "2017-03-01",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "publicIPAllocationMethod": "Dynamic",
+                "idleTimeoutInMinutes": 4
+            },
+            "dependsOn": []
+        },
+        {
+            "type": "Microsoft.Network/virtualNetworks",
+            "name": "[variables('vnetName')]",
+            "apiVersion": "2017-03-01",
+            "location": "[resourceGroup().location]",
+            "properties": {
+        
+                "addressSpace": {
+                    "addressPrefixes": [
+                        "172.17.3.0/24"
+                    ]
+                },
+                "subnets": [
+                    {
+                        "name": "default",
+                        "properties": {
+                            "addressPrefix": "172.17.3.0/24"
+                        }
+                    }
+                ],
+                "virtualNetworkPeerings": []
+            },
+            "dependsOn": []
+        },
+        {
+            "apiVersion": "2015-01-01",
+            "type": "Microsoft.Resources/deployments",
+            "name": "updateVNet",
+            "dependsOn": [
+                "[resourceId('Microsoft.Compute/virtualMachines/extensions', variables('dcName'), 'InstallDomainController')]"
+            ],
+            "properties": {
+                "mode": "Incremental",
+                "parameters": {},
+                "template": {
+                    "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {},
+                    "variables": {},
+                    "resources": [
+                        {
+                            "apiVersion": "2017-03-01",
+                            "name": "[variables('vnetName')]",
+                            "location":"[resourceGroup().location]",
+                            "type": "Microsoft.Network/virtualNetworks",
+                            "properties": {
+                                "addressSpace": {
+                                    "addressPrefixes": [
+                                        "172.17.3.0/24"
+                                    ]
+                                },
+                                "dhcpOptions": {
+                                    "dnsServers": [
+                                        "172.17.3.4"
+                                    ]
+                                },
+                                "subnets": [
+                                    {
+                                        "name": "default",
+                                        "properties": {
+                                            "addressPrefix": "172.17.3.0/24"
+                                        }
+                                    }
+                                ],
+                                "virtualNetworkPeerings": []
+                            }
+                        }
+                    ],
+                    "outputs": {}
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "sku": {
+                "name": "Standard_LRS",
+                "tier": "Standard"
+            },
+            "kind": "Storage",
+            "name": "[variables('diagStorageName')]",
+            "apiVersion": "2016-01-01",
+            "location": "[resourceGroup().location]",
+            "tags": {},
+            "properties": {},
+            "dependsOn": []
+        }, 
+        {
+            "type": "Microsoft.Compute/availabilitySets",
+            "name": "[variables('beAvSetName')]",
+            "apiVersion": "2016-04-30-preview",
+            "location": "[resourceGroup().location]",
+            "properties": {
+        
+                "platformFaultDomainCount": 2,
+                "platformUpdateDomainCount": 5,
+                "managed": true
+            }
+        },
+        {
+            "type": "Microsoft.Compute/availabilitySets",
+            "name": "[variables('feAvSetName')]",
+            "apiVersion": "2016-04-30-preview",
+            "location": "[resourceGroup().location]",
+            "properties": {
+        
+                "platformFaultDomainCount": 2,
+                "platformUpdateDomainCount": 5,
+                "managed": true
+            }
+        },
+        {  
+         "apiVersion":"2015-06-15",
+         "name":"[variables('beIlbName')]",
+         "type":"Microsoft.Network/loadBalancers",
+         "location": "[resourceGroup().location]",
+         "properties":{  
+            "frontendIPConfigurations":[  
+               {  
+                  "name":"[variables('beFeConfigName')]",
+                  "properties":{  
+                     "privateIPAllocationMethod":"Static",
+                     "privateIPAddress":"172.17.3.12",
+                     "subnet":{  
+                        "id": "[concat(resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), '/subnets/default')]"
+                     }
+                  }
+               }
+            ],
+            "backendAddressPools":[  
+               {  
+                  "name":"[variables('beBeConfigName')]"
+               }
+            ],
+            "loadBalancingRules":[  
+               {  
+                  "name":"BackendHttps",
+                  "properties":{  
+                     "backendAddressPool":{  
+                        "id": "[variables('beBeConfigId')]"
+                     },
+                     "frontendIPConfiguration":{  
+                        "id": "[variables('beFeConfigId')]"
+                     },
+                     "probe":{  
+                        "id": "[variables('beProbeId443')]"
+                     },
+                     "protocol":"Tcp",
+                     "frontendPort":443,
+                     "backendPort":443,
+                     "enableFloatingIP":false
+                  }
+               },
+               {  
+                  "name":"BackendHttp",
+                  "properties":{  
+                     "backendAddressPool":{  
+                        "id": "[variables('beBeConfigId')]"
+                     },
+                     "frontendIPConfiguration":{  
+                        "id": "[variables('beFeConfigId')]"
+                     },
+                     "probe":{  
+                        "id": "[variables('beProbeId80')]"
+                     },
+                     "protocol":"Tcp",
+                     "frontendPort":80,
+                     "backendPort":80,
+                     "enableFloatingIP":false
+                  }
+               }
+            ],
+            "probes":[  
+               {  
+                  "name":"[variables('beProbeName443')]",
+                  "properties":{  
+                     "protocol":"Tcp",
+                     "port":443,
+                     "intervalInSeconds":5,
+                     "numberOfProbes":2
+                  }
+               },
+               {  
+                  "name":"[variables('beProbeName80')]",
+                  "properties":{  
+                     "protocol":"Tcp",
+                     "port":80,
+                     "intervalInSeconds":5,
+                     "numberOfProbes":2
+                  }
+               }
+            ]
+         },
+         "dependsOn": [
+             "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+         ]
+      },
+      {  
+         "apiVersion":"2015-06-15",
+         "name":"[variables('feIlbName')]",
+         "type":"Microsoft.Network/loadBalancers",
+         "location": "[resourceGroup().location]",
+         "properties":{  
+            "frontendIPConfigurations":[  
+               {  
+                  "name":"[variables('feFeConfigName')]",
+                  "properties":{  
+                     "privateIPAllocationMethod":"Static",
+                     "privateIPAddress":"172.17.3.11",
+                     "subnet":{  
+                        "id": "[concat(resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), '/subnets/default')]"
+                     }
+                  }
+               }
+            ],
+            "backendAddressPools":[  
+               {  
+                  "name":"[variables('feBeConfigName')]"
+               }
+            ],
+            "loadBalancingRules":[  
+               {  
+                  "name":"webfrontendHttp",
+                  "properties":{  
+                     "backendAddressPool":{  
+                        "id": "[variables('feBeConfigId')]"
+                     },
+                     "frontendIPConfiguration":{  
+                        "id": "[variables('feFeConfigId')]"
+                     },
+                     "probe":{  
+                        "id": "[variables('feProbeId80')]"
+                     },
+                     "protocol":"Tcp",
+                     "frontendPort":80,
+                     "backendPort":80,
+                     "enableFloatingIP":false
+                  }
+               },
+               {  
+                  "name":"webfrontendHttps",
+                  "properties":{  
+                     "backendAddressPool":{  
+                        "id": "[variables('feBeConfigId')]"
+                     },
+                     "frontendIPConfiguration":{  
+                        "id": "[variables('feFeConfigId')]"
+                     },
+                     "probe":{  
+                        "id": "[variables('feProbeId443')]"
+                     },
+                     "protocol":"Tcp",
+                     "frontendPort":443,
+                     "backendPort":443,
+                     "enableFloatingIP":false
+                  }
+               }
+            ],
+            "probes":[  
+               {  
+                  "name":"[variables('feProbeName80')]",
+                  "properties":{  
+                     "protocol":"Tcp",
+                     "port":80,
+                     "intervalInSeconds":5,
+                     "numberOfProbes":2
+                  }
+               },
+               {  
+                  "name":"[variables('feProbeName443')]",
+                  "properties":{  
+                     "protocol":"Tcp",
+                     "port":443,
+                     "intervalInSeconds":5,
+                     "numberOfProbes":2
+                  }
+               }
+            ]
+         },
+         "dependsOn": [
+             "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+         ]
+      }
+    ]
+}
